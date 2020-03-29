@@ -1,4 +1,75 @@
-import numpy as np, random
+import random, math, numpy
+from scipy.stats import t, f
+
+def table_student(prob, f3):
+    x_vec = [i*0.0001 for i in range(int(5/0.0001))]
+    par = 0.5 + prob/0.1*0.05
+    for i in x_vec:
+        if abs(t.cdf(i, f3) - par) < 0.000005: return i
+
+def table_fisher(prob, d, f3):
+    x_vec = [i*0.001 for i in range(int(10/0.001))]
+    for i in x_vec:
+        if abs(f.cdf(i, 4-d, f3)-prob) < 0.0001: return i
+
+def dispersion(array_y, array_y_average):
+    array_dispersion = []
+
+    for j in range(N):
+        array_dispersion.append(0)
+        for g in range(m): array_dispersion[j] += (array_y[j][g] - array_y_average[j])**2
+        array_dispersion[j] /= m
+    return array_dispersion
+
+def cohren(y_array, y_average_array):
+    dispersion_array = dispersion(y_array, y_average_array)
+    max_dispersion = max(dispersion_array)
+    Gp = max_dispersion/sum(dispersion_array)
+    fisher = table_fisher(0.95, 1, (m - 1) * 4)
+    Gt = fisher/(fisher+(m-1)-2)
+    return Gp < Gt
+
+def student(y_array, y_average_array):
+    general_dispersion = sum(dispersion(y_array, y_average_array)) / N
+    statistic_dispersion = math.sqrt(general_dispersion / (N*m))
+    beta = []
+    for i in range(N):
+        b = 0
+        for j in range(3): b += y_average_array[i] * xn[i][j]
+        beta.append(b / N)
+    ts = [abs(beta[i]) / statistic_dispersion for i in range(N)]
+    f3 = (m-1)*N
+    return ts[0] > table_student(0.95, f3), ts[1] > table_student(0.95, f3),\
+           ts[2] > table_student(0.95, f3), ts[3] > table_student(0.95, f3)
+
+def coef(x_array, y_average_array):
+    mx1 = sum([x_array[i][0] for i in range(N)]) / N
+    mx2 = sum([x_array[i][1] for i in range(N)]) / N
+    mx3 = sum([x_array[i][2] for i in range(N)]) / N
+    my = sum(y_average_array) / N
+    a11 = sum([x_array[i][0]**2 for i in range(N)]) / N
+    a22 = sum([x_array[i][1]**2 for i in range(N)]) / N
+    a33 = sum([x_array[i][2]**2 for i in range(N)]) / N
+    a12 = sum([x_array[i][0]*x_array[i][1] for i in range(N)]) / N
+    a13 = sum([x_array[i][0]*x_array[i][2] for i in range(N)]) / N
+    a23 = sum([x_array[i][1]*x_array[i][2] for i in range(N)]) / N
+    a1 = sum([x_array[i][0]*y_average_array[i] for i in range(N)]) / N
+    a2 = sum([x_array[i][1]*y_average_array[i] for i in range(N)]) / N
+    a3 = sum([x_array[i][2]*y_average_array[i] for i in range(N)]) / N
+    a = numpy.array([[1, mx1, mx2, mx3], [mx1, a11, a12, a13], [mx2, a12, a22, a23], [mx3, a13, a23, a33]])
+    c = numpy.array([[my], [a1], [a2], [a3]])
+    b = numpy.linalg.solve(a, c)
+    return b
+
+def fisher(y_average_array, y0_array, y_array):
+    dispersion_adequacy = 0
+    for i in range(N): dispersion_adequacy += (y0_array[i] - y_average_array[i]) ** 2
+    dispersion_adequacy = dispersion_adequacy * m / (4 - d)
+    dispersion_reproducibility = sum(dispersion(y_array, y_average_array)) / N
+    Fp = dispersion_adequacy / dispersion_reproducibility
+    f3 = (m-1)*N
+    f4 = N - d
+    return Fp < table_fisher(0.95, d, f3)
 
 x1_min = -30
 x1_max = 20
@@ -6,142 +77,44 @@ x2_min = -25
 x2_max = 10
 x3_min = -30
 x3_max = -15
+y_min = 205
+y_max = 228
 
-x_midlle_max = (x1_max + x2_max + x3_max) / 3
-x_midlle_min = (x1_min + x2_min + x3_min) / 3
-y_max = 200 + x_midlle_max
-y_min = 200 + x_midlle_min
+xn = [[-1, -1, -1], [-1, +1, +1], [+1, -1, +1], [+1, +1, -1]]
+x = [[-30, -30, -30], [-30, 45, -15], [20, -30, -15], [20, 45, -30]]
 
 m = 3
-n = 4
-q = 0.5
+N = 4
+y = [[random.randint(y_min, y_max) for _ in range(m)] for _ in range(N)]
+y_average = [sum(y[i])/m for i in range(N)]
+condition_cohren = False
 
-def matrix(mtrx):
-    for i in range(len(mtrx)):
-        print("{}.".format(i + 1), end = "")
-        for j in range(len(mtrx[i])):
-            print("{:7}".format(mtrx[i][j]), end = "")
-        print()
+while not condition_cohren:
+    condition_cohren = cohren(y, y_average)
+    if not condition_cohren:
+        m += 1
+        for i in range(N): y[i].append(random.randint(y_min, y_max))
+condition_student = student(y, y_average)
 
-def lab3(m, n, q):
-    print("Матриця кодових значень")
-    x_code = np.array([[+1, -1, -1, -1], [+1, -1, +1, +1], [+1, +1, -1, +1], [+1, +1, +1, -1]])
-    matrix(x_code)
+d = sum(condition_student)
+b = [coef(x, y_average)[i][0]*condition_student[i] for i in range(N)]
 
-    print("Матриця іксів:")
-    x = np.array([[x1_min, x2_min, x3_min], [x1_min, x2_max, x3_max], [x1_max, x2_min, x3_max], [x1_max, x2_max, x3_min]])
-    matrix(x)
+yo = []
+for i in range(4): yo.append(b[0] + b[1] * x[i][0] + b[2] * x[i][1] + b[3] * x[i][2])
+if d != N: condition_fisher = fisher(y_average, yo, y)
+else: condition_fisher = True
 
-    print("Матриця ігриків:")
-    y = np.random.randint(y_min, y_max, size = (n, m))
-    matrix(y)
-
-    print("Середні значення функцій відгуку:")
-    y_midlle = np.sum(y, axis = 1) / len(y[0])
-    y_1, y_2, y_3, y_4 = y_midlle
-    print(f"y_1 = {y_1:.2f}\ny_2 = {y_2:.2f}\ny_3 = {y_3:.2f}\ny_4 = {y_4:.2f}")
-    mx_1, mx_2, mx_3 = [i / len(x) for i in np.sum(x, axis = 0)]
-    my = sum(y_midlle) / len(y_midlle)
-
-    a_1 = sum([x[i][0] * y_midlle[i] for i in range(len(x))]) / len(x)
-    a_2 = sum([x[i][1] * y_midlle[i] for i in range(len(x))]) / len(x)
-    a_3 = sum([x[i][2] * y_midlle[i] for i in range(len(x))]) / len(x)
-
-    a_11 = sum([x[i][0] ** 2 for i in range(len(x))]) / len(x)
-    a_22 = sum([x[i][1] ** 2 for i in range(len(x))]) / len(x)
-    a_33 = sum([x[i][2] ** 2 for i in range(len(x))]) / len(x)
-    a_12 = sum([x[i][0] * x[i][1] for i in range(len(x))]) / len(x)
-    a_13 = sum([x[i][0] * x[i][2] for i in range(len(x))]) / len(x)
-    a_23 = a_32 = sum([x[i][1] * x[i][2] for i in range(len(x))]) / len(x)
-
-    det = np.linalg.det([[1, mx_1, mx_2, mx_3], [mx_1, a_11, a_12, a_13], [mx_2, a_12, a_22, a_32], [mx_3, a_13, a_23, a_33]])
-    det_0 = np.linalg.det([[my, mx_1, mx_2, mx_3], [a_1, a_11, a_12, a_13], [a_2, a_12, a_22, a_32], [a_3, a_13, a_23, a_33]])
-    det_1 = np.linalg.det([[1, my, mx_2, mx_3], [mx_1, a_1, a_12, a_13], [mx_2, a_2, a_22, a_32], [mx_3, a_3, a_23, a_33]])
-    det_2 = np.linalg.det([[1, mx_1, my, mx_3], [mx_1, a_11, a_1, a_13], [mx_2, a_12, a_2, a_32], [mx_3, a_13, a_3, a_33]])
-    det_3 = np.linalg.det([[1, mx_1, mx_2, my], [mx_1, a_11, a_12, a_1], [mx_2, a_12, a_22, a_2], [mx_3, a_13, a_23, a_3]])
-
-    b_0 = det_0 / det
-    b_1 = det_1 / det
-    b_2 = det_2 / det
-    b_3 = det_3 / det
-    b = [b_0, b_1, b_2, b_3]
-
-    print("Нормоване рівняння регресії:: y = {0} + {1} * x1 + {2} * x2 + {3} * x3\n".format(round(b_0, 5), round(b_1, 5), round(b_2, 5), round(b_3, 5)))
-    print("Перевірка:")
-    y_1_exp = b_0 + b_1 * x[0][0] + b_2 * x[0][1] + b_3 * x[0][2]
-    y_2_exp = b_0 + b_1 * x[1][0] + b_2 * x[1][1] + b_3 * x[1][2]
-    y_3_exp = b_0 + b_1 * x[2][0] + b_2 * x[2][1] + b_3 * x[2][2]
-    y_4_exp = b_0 + b_1 * x[3][0] + b_2 * x[3][1] + b_3 * x[3][2]
-    print(f"y_1 = {b_0:.3f} + {b_1:.3f} * {x[0][0]} + {b_2:.3f} * {x[0][1]} + {b_3:.3f} * {x[0][2]} = {y_1_exp:.3f}"
-          f"\ny_2 = {b_0:.3f} + {b_1:.3f} * {x[1][0]} + {b_2:.3f} * {x[1][1]} + {b_3:.3f} * {x[1][2]} = {y_2_exp:.3f}"
-          f"\ny_3 = {b_0:.3f} + {b_1:.3f} * {x[2][0]} + {b_2:.3f} * {x[2][1]} + {b_3:.3f} * {x[2][2]} = {y_3_exp:.3f}"
-          f"\ny_4 = {b_0:.3f} + {b_1:.3f} * {x[3][0]} + {b_2:.3f} * {x[3][1]} + {b_3:.3f} * {x[3][2]} = {y_4_exp:.3f}")
-
-    print("\nКритерій Кохрена")
-    f_1 = m - 1
-    f_2 = n
-    s_1 = sum([(i - y_1) ** 2 for i in y[0]]) / m
-    s_2 = sum([(i - y_2) ** 2 for i in y[1]]) / m
-    s_3 = sum([(i - y_3) ** 2 for i in y[2]]) / m
-    s_4 = sum([(i - y_4) ** 2 for i in y[3]]) / m
-    s_array = np.array([s_1, s_2, s_3, s_4])
-    gP = max(s_array) / sum(s_array)
-
-    table = {3: 0.6841, 4: 0.6287, 5: 0.5892, 6: 0.5598, 7: 0.5365, 8: 0.5175, 9: 0.5017, 10: 0.4884, range(11, 17): 0.4366, range(17, 37): 0.3720, range(37, 145): 0.3093}
-    gT = table.get(m)
-
-    if(gP < gT):
-        print(f"Дисперсія однорідна: Gp = {gP:.5} < Gt = {gT}")
-    else:
-        print(f"Дисперсія не однорідна Gp = {gP:.5} < Gt = {gT}")
-        m = m + 1
-        lab3(m + 1, n, q)
-        return
-
-    print("\nКритерій Стьюдента")
-    s2_B = s_array.sum() / n
-    s2_beta_S = s2_B / (n * m)
-    s_beta_S = pow(s2_beta_S, 1/2)
-
-    beta_0 = sum([x_code[i][0] * y_midlle[i] for i in range(len(x_code))]) / n
-    beta_1 = sum([x_code[i][1] * y_midlle[i] for i in range(len(x_code))]) / n
-    beta_2 = sum([x_code[i][2] * y_midlle[i] for i in range(len(x_code))]) / n
-    beta_3 = sum([x_code[i][3] * y_midlle[i] for i in range(len(x_code))]) / n
-
-    t = [abs(beta_0) / s_beta_S, abs(beta_1) / s_beta_S, abs(beta_2) / s_beta_S, abs(beta_3) / s_beta_S ]
-
-    f3 = f_1 * f_2
-    t_table = {8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.08, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.06}
-    d = 4
-
-    for i in range(len(t)):
-        if(t_table.get(f3) > t[i]):
-            b[i] = 0
-            d -= 1
-
-    print(f"Рівняння регресії: y = {b[0]:.3f} + {b[1]:.3f} * x1 + {b[2]:.3f} * x2 + {b[3]:.3f} * x3")
-    check_0 = b[0] + b[1] * x[0][0] + b[2] * x[0][1] + b[3] * x[0][2]
-    check_1 = b[0] + b[1] * x[1][0] + b[2] * x[1][1] + b[3] * x[1][2]
-    check_2 = b[0] + b[1] * x[2][0] + b[2] * x[2][1] + b[3] * x[2][2]
-    check_3 = b[0] + b[1] * x[3][0] + b[2] * x[3][1] + b[3] * x[3][2]
-    ckeck_list = [check_0, check_1, check_2, check_3]
-    print("Значення у нормованих: ", ckeck_list)
-
-    print("\nКритерій Фішера")
-    f_4 = n - d
-    s2_ad = m / f_4 * sum([(ckeck_list[i] - y_midlle[i]) ** 2 for i in range(len(y_midlle))])
-    fP = s2_ad / s2_B
-    fT = [[164.4, 199.5, 215.7, 224.6, 230.2, 234], [18.5, 19.2, 19.2, 19.3, 19.3, 19.3],
-         [10.1, 9.6, 9.3, 9.1, 9, 8.9], [7.7, 6.9, 6.6, 6.4, 6.3, 6.2], [6.6, 5.8, 5.4, 5.2, 5.1, 5],
-		 [6, 5.1, 4.8, 4.5, 4.4, 4.3], [5.5, 4.7, 4.4, 4.1, 4, 3.9], [5.3, 4.5, 4.1, 3.8, 3.7, 3.6],
-		 [5.1, 4.3, 3.9, 3.6, 3.5, 3.4], [5, 4.1, 3.7, 3.5, 3.3, 3.2], [4.8, 4, 3.6, 3.4, 3.2, 3.1],
-		 [4.8, 3.9, 3.5, 3.3, 3.1, 3], [4.7, 3.8, 3.4, 3.2, 3, 2.9], [4.6, 3.7, 3.3, 3.1, 3, 2.9],
-		 [4.5, 3.7, 3.3, 3.1, 2.9, 2.8], [4.5, 3.6, 3.2, 3, 2.9, 2.7], [4.5, 3.6, 3.2, 3, 2.8, 2.7],
-		 [4.4, 3.6, 3.2, 2.9, 2.8, 2.7], [4.4, 3.5, 3.1, 2.9, 2.7, 2.6], [4.4, 3.5, 3.1, 2.9, 2.7, 2.6]]
-    if(fP > fT[f3][f_4]):
-        print(f"fp = {fP} > ft = {fT[f3][f_4]}.\nМатематична модель не адекватна експериментальним даним")
-    else:
-    	print(f"fP = {fP} < fT = {fT}.\nМатематична модель адекватна експериментальним даним")
-
-print("Рівняння регресії --- y = b_0 + b_1 * x1 + b_1 * x2 +b_3 * x3")
-lab3(m, n, q)
+print('x1 min:', x1_min, '  x1 max:', x1_max)
+print('x2 min:', x2_min, '  x2 max:', x2_max)
+print('x3 min:', x3_min, '  x3 max:', x3_max)
+print('y min:', y_min, ' y max:', y_max)
+print()
+print(f'Отримане рівняння регресії при m={m}:')
+print(f'y = {b[0]:.2f} + {b[1]:.2f} x1 + {b[2]:.2f} x2 + {b[3]:.2f} x3')
+print('Перевірка:')
+for i in range(N):
+    print(f'Yc{i+1:.2f}={y_average[i]:.2f}')
+    print(f'Y{i+1:.2f}={y_average[i]:.2f}')
+print(f'Кількість значущих коефіцієнтів:{d}')
+if condition_fisher: print('Отримана математична модель адекватна експериментальним даним')
+else: print('Рівняння регресії неадекватно оригіналу')
